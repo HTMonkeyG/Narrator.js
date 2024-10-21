@@ -1,0 +1,16 @@
+{
+  "name": "narrator",
+  "version": "1.0.0",
+  "description": "Read and write MCBE archive data with NodeJS",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "mcbe",
+    "mcpe",
+    "leveldb"
+  ],
+  "author": "HTMonkeyG",
+  "license": "MIT"
+}
