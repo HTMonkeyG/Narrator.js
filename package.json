@@ -12,5 +12,17 @@
     "leveldb"
   ],
   "author": "HTMonkeyG",
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HTMonkeyG/Narrator.js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/HTMonkeyG/Narrator.js/issues"
+  },
+  "homepage": "https://github.com/HTMonkeyG/Narrator.js#readme",
+  "dependencies": {
+    "leveldb-zlib": "^1.2.0",
+    "parsenbt-js": "^1.1.3"
+  }
 }
