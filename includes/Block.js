@@ -1,4 +1,5 @@
-const NBT = require("parsenbt-js");
+const NBT = require("parsenbt-js")
+  , BlockState = require("./BlockState.js");
 
 class BlockLegacy {
   static deserialize(snbt) {
@@ -40,6 +41,33 @@ class BlockLegacy {
     this.name = name;
     this.val = value & 0xF;
     this.states = {};
+    this.setValue(value || 0);
+  }
+
+  setState(key, value) {
+    var support;
+    if (BlockState[this.name] && typeof BlockState[this.name].support_value[key] != "undefined") {
+      support = BlockState[this.name].support_value[key];
+      if (support.indexOf(value) != -1) {
+        this.states[key] = value;
+        return true
+      }
+    }
+    return false
+  }
+
+  setValue(val) {
+    var v = "0b" + val.toString(2);
+    if (BlockState[this.name])
+      if (BlockState[this.name][v]) {
+        this.val = 0;
+        for (var s in BlockState[this.name][v])
+          this.states[s] = BlockState[this.name][v][s];
+      } else
+        for (var s in BlockState[this.name].default)
+          this.states[s] = BlockState[this.name].default[s];
+    else
+      this.val = val
   }
 
   nbtify() {

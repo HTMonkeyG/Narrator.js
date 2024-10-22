@@ -8,5 +8,7 @@ var b = a.getElement(256 + 1)
 while (a.setElement(0, c))
   c = new BlockLegacy("minecraft:tnt", d++)
 console.log(a.getElement(0))
+a.makePruned();
+console.log(a.getElement(0))
 
 fs.writeFileSync("./chunk(0,0).dump.1", a.serialize());

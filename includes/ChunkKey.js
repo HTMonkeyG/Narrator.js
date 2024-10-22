@@ -27,3 +27,6 @@ function getStructureMeta(buf) {
     name: r[1]
   }
 }
+
+exports.getChunkMeta = getChunkMeta;
+exports.getStructureMeta = getStructureMeta;
