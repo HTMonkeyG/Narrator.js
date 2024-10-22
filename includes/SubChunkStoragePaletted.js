@@ -3,6 +3,22 @@ const NBT = require("parsenbt-js")
 
 class SubChunkStoragePaletted {
   /**
+   * @param {Number} a 
+   */
+  static getMatchedBitLength(a) {
+    if (a == 1) return 0;
+    else if (a <= 2) return 1;
+    else if (a <= 4) return 2;
+    else if (a <= 8) return 3;
+    else if (a <= 16) return 4;
+    else if (a <= 32) return 5;
+    else if (a <= 64) return 6;
+    else if (a <= 128) return 7;
+    else if (a <= 256) return 8;
+    else return 16;
+  }
+
+  /**
    * Deserialize subchunk from db.
    * @param {Buffer} buf 
    * @returns {SubChunkStoragePaletted}
@@ -33,7 +49,8 @@ class SubChunkStoragePaletted {
    * @returns {SubChunkStoragePaletted}
    */
   static makeExpanded(a) {
-
+    var l = SubChunkStoragePaletted.getMatchedBitLength(a.maxPaletteLength + 1);
+    return SubChunkStoragePaletted.makeType(a, l);
   }
 
   /**
@@ -44,52 +61,74 @@ class SubChunkStoragePaletted {
    * @returns {SubChunkStoragePaletted}
    */
   static makePruned(a) {
-    var result = new SubChunkStoragePaletted()
-      , elementMask = new Uint8Array(a.maxPaletteLength >> 3)
+    var elementMask = new Uint8Array(a.maxPaletteLength >> 3 || 1)
       , n = Math.floor(32 / a.bitsPerElement)
       , o = n * a.bitsPerElement
-      , m = (1 << a.bitsPerElement) - 1
-      , map = new Uint16Array(1 << a.bitsPerElement);
+      , m = (1 << a.bitsPerElement) - 1;
 
-    result.bitsPerElement = a.bitsPerElement;
-    result.version = a.version;
-    result.maxPaletteLength = a.maxPaletteLength;
-    result.data = new Uint32Array(a.data.length);
-    result.palette = [];
-
-    // Get not refernced elements
+    // Get not referenced elements
     for (var i = 0; i < a.data.length; i++)
       for (var j = 0; j < o; j += a.bitsPerElement) {
         var k = (a.data[i] & (m << j)) >> j;
         elementMask[k >> 3] |= 1 << (k & 7);
       }
 
-    // Build mappings between pruned and before
-    for (var i = 0; i < elementMask.byteLength * 8; i++)
-      if (elementMask[i >> 3] & (1 << (i & 7))) {
-        result.palette.push(a.palette[i]);
-        map[i] = result.palette.length - 1;
-      }
+    for (var i = 0, j = 0; i < elementMask.byteLength * 8; i++)
+      if (elementMask[i >> 3] & (1 << (i & 7)))
+        j++;
 
-    // Modify palette index
-    for (var i = 0; i < a.data.length; i++)
-      for (var j = 0; j < o; j += a.bitsPerElement) {
-        var k = (a.data[i] & (m << j)) >> j;
-        result.data[i] |= (map[k] & m) << j;
-      }
-
-    return result
+    return SubChunkStoragePaletted.makeType(
+      a,
+      SubChunkStoragePaletted.getMatchedBitLength(j),
+      elementMask
+    );
   }
 
   /**
    * Convert subchunk to another palette length.
    * @param {SubChunkStoragePaletted} a 
+   * @param {Number} bitsPerElement 
+   * @param {Uint16Array} elementMask 
    * @returns {SubChunkStoragePaletted}
    */
-  static makeType(a, bitsPerElement) {
-    var result = new SubChunkStoragePaletted();
-    result.palette = [];
+  static makeType(a, bitsPerElement, elementMask) {
+    var result = new SubChunkStoragePaletted(), dataLength
+      , n1 = Math.floor(32 / a.bitsPerElement)
+      , n2 = Math.floor(32 / bitsPerElement)
+      , o = n1 * a.bitsPerElement
+      , m1 = (1 << a.bitsPerElement) - 1
+      , map = new Uint16Array(1 << a.bitsPerElement)
+      , m2 = (1 << bitsPerElement) - 1;
+
     result.bitsPerElement = bitsPerElement;
+    result.maxPaletteLength = 1 << bitsPerElement;
+    result.version = a.version;
+    dataLength = Math.ceil(4096 / Math.floor(32 / result.bitsPerElement));
+    result.data = new Uint32Array(dataLength);
+    result.palette = [];
+
+    if (!elementMask)
+      result.palette = a.palette.slice(0, result.maxPaletteLength);
+    else {
+      // Build mappings between pruned and before
+      for (var i = 0; i < elementMask.byteLength * 8; i++)
+        if (elementMask[i >> 3] & (1 << (i & 7))) {
+          result.palette.push(a.palette[i]);
+          map[i] = result.palette.length - 1;
+        }
+    }
+
+    for (var i = 0, offset = 0, shift = 0; i < a.data.length; i++)
+      for (var j = 0; j < o; j += a.bitsPerElement) {
+        var k = (a.data[i] & (m1 << j)) >> j;
+        elementMask && (k = map[k])
+        result.data[offset] |= (k & m1 & m2) << shift * bitsPerElement;
+        shift++;
+        if (shift >= n2)
+          shift = 0, offset++;
+      }
+
+    return result
   }
 
   /**
@@ -179,6 +218,8 @@ class SubChunkStoragePaletted {
    */
   makePruned() {
     var a = SubChunkStoragePaletted.makePruned(this);
+    this.bitsPerElement = a.bitsPerElement;
+    this.maxPaletteLength = a.maxPaletteLength;
     this.data = a.data;
     this.palette = a.palette;
     return this
