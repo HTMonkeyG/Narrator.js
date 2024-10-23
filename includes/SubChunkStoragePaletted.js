@@ -26,11 +26,11 @@ class SubChunkStoragePaletted {
   static deserialize(buf) {
     var result = new SubChunkStoragePaletted(), dataLength;
     result.version = buf.readUint32LE(0) & 0xFFFFFF;
-    // Numerous tests have shown that this byte is bitsPerElement * 2
-    result.bitsPerElement = buf.readUint8(3) >> 1;
-    result.maxPaletteLength = 1 << result.bitsPerElement;
+    // Numerous tests have shown that this byte is bitDepth * 2
+    result.bitDepth = buf.readUint8(3) >> 1;
+    result.maxPaletteLength = 1 << result.bitDepth;
 
-    dataLength = Math.ceil(4096 / Math.floor(32 / result.bitsPerElement)) * 4;
+    dataLength = Math.ceil(4096 / Math.floor(32 / result.bitDepth)) * 4;
     result.data = new Uint32Array(Uint8Array.from(buf.subarray(4, 4 + dataLength)).buffer);
     result.palette = [];
     var palette = NBT.ReadSerial(Uint8Array.from(buf.subarray(8 + dataLength)).buffer, true);
@@ -62,13 +62,13 @@ class SubChunkStoragePaletted {
    */
   static makePruned(a) {
     var elementMask = new Uint8Array(a.maxPaletteLength >> 3 || 1)
-      , n = Math.floor(32 / a.bitsPerElement)
-      , o = n * a.bitsPerElement
-      , m = (1 << a.bitsPerElement) - 1;
+      , n = Math.floor(32 / a.bitDepth)
+      , o = n * a.bitDepth
+      , m = (1 << a.bitDepth) - 1;
 
     // Get not referenced elements
     for (var i = 0; i < a.data.length; i++)
-      for (var j = 0; j < o; j += a.bitsPerElement) {
+      for (var j = 0; j < o; j += a.bitDepth) {
         var k = (a.data[i] & (m << j)) >> j;
         elementMask[k >> 3] |= 1 << (k & 7);
       }
@@ -87,23 +87,23 @@ class SubChunkStoragePaletted {
   /**
    * Convert subchunk to another palette length.
    * @param {SubChunkStoragePaletted} a 
-   * @param {Number} bitsPerElement 
+   * @param {Number} bitDepth 
    * @param {Uint16Array} elementMask 
    * @returns {SubChunkStoragePaletted}
    */
-  static makeType(a, bitsPerElement, elementMask) {
+  static makeType(a, bitDepth, elementMask) {
     var result = new SubChunkStoragePaletted(), dataLength
-      , n1 = Math.floor(32 / a.bitsPerElement)
-      , n2 = Math.floor(32 / bitsPerElement)
-      , o = n1 * a.bitsPerElement
-      , m1 = (1 << a.bitsPerElement) - 1
-      , map = new Uint16Array(1 << a.bitsPerElement)
-      , m2 = (1 << bitsPerElement) - 1;
+      , n1 = Math.floor(32 / a.bitDepth)
+      , n2 = Math.floor(32 / bitDepth)
+      , o = n1 * a.bitDepth
+      , m1 = (1 << a.bitDepth) - 1
+      , map = new Uint16Array(1 << a.bitDepth)
+      , m2 = (1 << bitDepth) - 1;
 
-    result.bitsPerElement = bitsPerElement;
-    result.maxPaletteLength = 1 << bitsPerElement;
+    result.bitDepth = bitDepth;
+    result.maxPaletteLength = 1 << bitDepth;
     result.version = a.version;
-    dataLength = Math.ceil(4096 / Math.floor(32 / result.bitsPerElement));
+    dataLength = Math.ceil(4096 / Math.floor(32 / result.bitDepth));
     result.data = new Uint32Array(dataLength);
     result.palette = [];
 
@@ -119,10 +119,10 @@ class SubChunkStoragePaletted {
     }
 
     for (var i = 0, offset = 0, shift = 0; i < a.data.length; i++)
-      for (var j = 0; j < o; j += a.bitsPerElement) {
+      for (var j = 0; j < o; j += a.bitDepth) {
         var k = (a.data[i] & (m1 << j)) >> j;
         elementMask && (k = map[k])
-        result.data[offset] |= (k & m1 & m2) << shift * bitsPerElement;
+        result.data[offset] |= (k & m1 & m2) << shift * bitDepth;
         shift++;
         if (shift >= n2)
           shift = 0, offset++;
@@ -137,7 +137,7 @@ class SubChunkStoragePaletted {
   constructor(placeholder) {
     this.version = 0xFC0109;
     this.data = new Uint32Array(0);
-    this.bitsPerElement = 0;
+    this.bitDepth = 0;
     this.palette = placeholder ? [placeholder] : [new BlockLegacy("minecraft:air")];
     this.maxPaletteLength = 1;
   }
@@ -151,10 +151,10 @@ class SubChunkStoragePaletted {
    */
   getElement(pos) {
     pos &= 0xFFF;
-    var n = Math.floor(32 / this.bitsPerElement)
+    var n = Math.floor(32 / this.bitDepth)
       , shift = pos % n
       , offset = Math.floor(pos / n)
-      , index = this.data[offset] >> shift * this.bitsPerElement & (1 << this.bitsPerElement) - 1;
+      , index = this.data[offset] >> shift * this.bitDepth & (1 << this.bitDepth) - 1;
     return this.palette[index]
   }
 
@@ -174,11 +174,11 @@ class SubChunkStoragePaletted {
 
     if (i < this.palette.length) {
       // Found
-      var n = Math.floor(32 / this.bitsPerElement)
+      var n = Math.floor(32 / this.bitDepth)
         , shift = pos % n
         , offset = Math.floor(pos / n);
-      this.data[offset] &= ~((1 << this.bitsPerElement) - 1 << shift * this.bitsPerElement);
-      this.data[offset] |= i << shift * this.bitsPerElement;
+      this.data[offset] &= ~((1 << this.bitDepth) - 1 << shift * this.bitDepth);
+      this.data[offset] |= i << shift * this.bitDepth;
       return true
     } else {
       // Not Found
@@ -186,11 +186,11 @@ class SubChunkStoragePaletted {
         // Larger than max value
         return false;
       this.palette.push(element);
-      var n = Math.floor(32 / this.bitsPerElement)
+      var n = Math.floor(32 / this.bitDepth)
         , shift = pos % n
         , offset = Math.floor(pos / n);
-      this.data[offset] &= ~((1 << this.bitsPerElement) - 1 << shift * this.bitsPerElement);
-      this.data[offset] |= i << shift * this.bitsPerElement;
+      this.data[offset] &= ~((1 << this.bitDepth) - 1 << shift * this.bitDepth);
+      this.data[offset] |= i << shift * this.bitDepth;
       return true
     }
   }
@@ -202,7 +202,7 @@ class SubChunkStoragePaletted {
   serialize() {
     var a = Buffer.alloc(4), b = Buffer.alloc(4), result;
     a.writeUInt32LE(this.version, 0);
-    a.writeUInt8(this.bitsPerElement << 1, 3);
+    a.writeUInt8(this.bitDepth << 1, 3);
     b.writeUInt32LE(this.palette.length);
     result = Buffer.concat([a, Buffer.from(this.data.buffer), b]);
     for (var p of this.palette)
@@ -218,7 +218,7 @@ class SubChunkStoragePaletted {
    */
   makePruned() {
     var a = SubChunkStoragePaletted.makePruned(this);
-    this.bitsPerElement = a.bitsPerElement;
+    this.bitDepth = a.bitDepth;
     this.maxPaletteLength = a.maxPaletteLength;
     this.data = a.data;
     this.palette = a.palette;
