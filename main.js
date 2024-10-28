@@ -12,18 +12,35 @@ function toChunkHash(dimension, pos) {
 }
 
 class Narrator {
+  /**
+   * @param {*} path - Path to archive
+   * @param {*} options - Initial options
+   */
   constructor(path, options) {
     this.db = null;
     this.isOpen = false;
     this.worldMeta = null;
-    this.options = options || { createIfMissing: false };
     this.path = path;
-    this.chunkCache = QuickLRU.createLRU({ max: 2048, onEviction: _ => _ });
+    this.options = options || {
+      createIfMissing: false,
+      forceLoadChunk: false,
+      maxFillBlockLimit: 65536,
+      maxChunkCacheSize: 2048
+    };
+    this.chunkCache = QuickLRU.createLRU({
+      max: this.options.maxChunkCacheSize,
+      onEviction: (function (a, b) {
+        this.writeChunk(b)
+      }).bind(this)
+    });
     this.levelName = "";
     this.structures = new Map();
     this.players = new Map();
   }
 
+  /**
+   * Open the MCBE archive.
+   */
   async open() {
     if (this.isOpen)
       return;
@@ -43,11 +60,14 @@ class Narrator {
     this.isOpen = true;
   }
 
+  /**
+   * Write the MCBE archive, and clear cached data.
+   */
   async close() {
-    //fs.writeFileSync(pl.join(this.path, "level.dat"), this.worldMeta.serialize());
-    //fs.writeFileSync(pl.join(this.path, "levelname.txt"), this.levelName);
+    fs.writeFileSync(pl.join(this.path, "level.dat"), this.worldMeta.serialize());
+    fs.writeFileSync(pl.join(this.path, "levelname.txt"), this.levelName);
 
-    for(var chunk of this.chunkCache.values()) {
+    for (var chunk of this.chunkCache.values()) {
       await this.writeChunk(chunk)
     }
 
@@ -62,21 +82,66 @@ class Narrator {
     this.isOpen = false;
   }
 
+  /**
+   * Try to load a chunk from db
+   * @param {*} dimension 
+   * @param {*} pos 
+   * @returns 
+   */
   async loadChunk(dimension, pos) {
     var k = toChunkHash(dimension, pos), c;
     if (this.chunkCache.has(k))
       return this.chunkCache.get(k);
 
     c = await Chunk.deserialize(this.db, pos, dimension);
+    if (!c && !this.options.forceLoadChunk)
+      return null
+    else if (!c && this.options.forceLoadChunk)
+      c = Chunk.create();
+
     this.chunkCache.set(k, c);
     return c
   }
 
+  /**
+   * Write a chunk to db.
+   * @param {Chunk} chunk 
+   * @returns 
+   */
   async writeChunk(chunk) {
     return await chunk.serialize(this.db)
   }
 
+  /**
+   * Delete a chunk of db and memory.
+   * 
+   * This operation will remove all the data of target chunk
+   * and can't be restored.
+   * @param {*} dimension 
+   * @param {*} pos 
+   * @returns 
+   */
+  async deleteChunk(dimension, pos) {
+    var k = toChunkHash(dimension, pos);
+    if (this.chunkCache.has(k))
+      this.chunkCache.delete(k);
+  }
+
   async execute(command) {
+
+  }
+
+  async setContext() {
+
+  }
+
+  /**
+   * Place a block in world
+   * @param {Number} dimension
+   * @param {*} pos 
+   * @param {*} block 
+   */
+  async setBlock(dimension, pos, block) {
 
   }
 }

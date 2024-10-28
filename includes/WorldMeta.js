@@ -174,7 +174,7 @@ class WorldMeta {
 
   serialize() {
     var buf = Buffer.from(new Uint8Array(NBT.Writer(this.snbt, true, true)))
-      , header = Buffer.alloc(16);
+      , header = Buffer.alloc(8);
     header.writeUInt32LE(10, 0);
     header.writeUInt32LE(buf.byteLength, 4);
     return Buffer.concat([header, buf]);

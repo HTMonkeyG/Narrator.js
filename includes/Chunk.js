@@ -6,6 +6,13 @@ const BlockLegacy = require("./Block.js");
 const { SubChunkBlockPos } = require("./Structs.js");
 
 class Chunk {
+  /**
+   * Read all data of a chunk from db.
+   * @param {*} db 
+   * @param {*} pos 
+   * @param {*} dimension 
+   * @returns 
+   */
   static async deserialize(db, pos, dimension) {
     var d, result = new Chunk(), flag;
 
@@ -22,6 +29,17 @@ class Chunk {
     result.pos.x = pos.x;
     result.pos.z = pos.z;
 
+    // Check for whether chunk is loaded
+    var iter = db.getIterator(), testMeta;
+    await iter.seek(buildChunkMeta({
+      pos: [pos.x, pos.z],
+      type: 0,
+      dimension: dimension
+    }));
+    testMeta = getChunkMeta((await iter.next())[1]);
+    if (!testMeta || testMeta.pos[0] != pos.x || testMeta.pos[1] != pos.z)
+      return null;
+
     // Deserialize subchunks
     for (var i = result.minHeight >> 4, max = result.height + result.minHeight; i < max >> 4; i++) {
       var m = buildChunkMeta({
@@ -36,6 +54,35 @@ class Chunk {
           new SubChunkStoragePaletted(new BlockLegacy("minecraft:air"))
       );
     }
+
+    return result
+  }
+
+  /**
+   * Create an empty chunk.
+   * @param {*} pos 
+   * @param {*} dimension 
+   * @returns 
+   */
+  static create(pos, dimension) {
+    var d, result = new Chunk();
+
+    if (typeof dimension != 'number' || dimension < 0)
+      throw new Error("Param dimension must be a number >= 0");
+
+    result.dimensionId = dimension;
+    d = Dimension[dimension] || Dimension[0];
+    if (d) {
+      result.minHeight = d.minHeight;
+      result.height = d.height;
+    }
+
+    result.pos.x = pos.x;
+    result.pos.z = pos.z;
+
+    // Deserialize subchunks
+    for (var i = result.minHeight >> 4, max = result.height + result.minHeight; i < max >> 4; i++)
+      result.subChunk.push(new SubChunkStoragePaletted(new BlockLegacy("minecraft:air")));
 
     return result
   }
