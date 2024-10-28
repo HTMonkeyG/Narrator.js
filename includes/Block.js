@@ -13,7 +13,7 @@ class BlockLegacy {
     result.val = snbt["i16>val"];
     result.version = snbt["i32>version"];
     if (snbt["comp>states"])
-      for (var s in snbt["comp>states"])
+      for (var s of NBT.keys(snbt["comp>states"]))
         states[s.replace(/.*>/, "")] = snbt["comp>states"][s];
     result.states = states;
     return result

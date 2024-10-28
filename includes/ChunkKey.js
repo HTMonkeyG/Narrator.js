@@ -15,19 +15,16 @@ function getChunkMeta(buf) {
 }
 
 function buildChunkMeta(meta) {
-  if (buf.length < 9) return false;
-  var pos = [buf.readInt32LE(0), buf.readInt32LE(4)];
-  if (Math.abs(pos[0]) > 1875000 || Math.abs(pos[1]) > 1875000) return false;
-  var type, index, dimension = 0;
-  if (buf.length == 9)
-    type = buf.readUInt8(8);
-  if (buf.length == 10)
-    type = buf.readUInt8(8), index = buf.readUInt8(9);
-  if (buf.length == 13)
-    dimension = buf.readUInt32LE(8), type = buf.readUInt8(12);
-  if (buf.length == 14)
-    dimension = buf.readUInt32LE(8), type = buf.readUInt8(12), index = buf.readUInt8(13);
-  return { pos: pos, type: type, index: index, dimension: dimension }
+  var result = Buffer.alloc(14), offset = 0;
+  result.writeInt32LE(meta.pos[0], (offset += 4) - 4);
+  result.writeInt32LE(meta.pos[1], (offset += 4) - 4);
+  if (meta.dimension)
+    result.writeUInt32LE(meta.dimension, (offset += 4) - 4);
+  result.writeUInt8(meta.type, (offset += 1) - 1);
+  if (typeof meta.index != 'undefined')
+    result.writeInt8(meta.index, (offset += 1) - 1);
+
+  return result.subarray(0, offset);
 }
 
 function getStructureMeta(buf) {
@@ -46,3 +43,4 @@ function getStructureMeta(buf) {
 
 exports.getChunkMeta = getChunkMeta;
 exports.getStructureMeta = getStructureMeta;
+exports.buildChunkMeta = buildChunkMeta;

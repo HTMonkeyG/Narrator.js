@@ -2,3 +2,4 @@ node_modules
 *.dump
 *.dump.1
 docs
+test*

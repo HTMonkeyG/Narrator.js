@@ -15,3 +15,5 @@ const Dimension = {
     height: 256
   }
 }
+
+module.exports = Dimension;

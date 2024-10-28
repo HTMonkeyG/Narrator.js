@@ -49,7 +49,12 @@ class SubChunkStoragePaletted {
    * @returns {SubChunkStoragePaletted}
    */
   static makeExpanded(a) {
-    var l = SubChunkStoragePaletted.getMatchedBitLength(a.maxPaletteLength + 1);
+    var l = SubChunkStoragePaletted.getMatchedBitLength(a.maxPaletteLength + 1), m;
+    if (l == 8) {
+      m = SubChunkStoragePaletted.makePruned(a);
+      if (m.bitDepth < a.bitDepth)
+        return m
+    }
     return SubChunkStoragePaletted.makeType(a, l);
   }
 
@@ -218,6 +223,21 @@ class SubChunkStoragePaletted {
    */
   makePruned() {
     var a = SubChunkStoragePaletted.makePruned(this);
+    this.bitDepth = a.bitDepth;
+    this.maxPaletteLength = a.maxPaletteLength;
+    this.data = a.data;
+    this.palette = a.palette;
+    return this
+  }
+
+  /**
+   * Remove not referenced element.
+   * 
+   * Directly perform the operation on subchunk.
+   * @returns {SubChunkStoragePaletted}
+   */
+  makeExpanded() {
+    var a = SubChunkStoragePaletted.makeExpanded(this);
     this.bitDepth = a.bitDepth;
     this.maxPaletteLength = a.maxPaletteLength;
     this.data = a.data;
