@@ -3,9 +3,36 @@ const { LevelDB } = require('leveldb-zlib')
   , pl = require("path")
   , NBT = require('parsenbt-js')
   , QuickLRU = require("lru.min")
-  , WorldMeta = require('./includes/WorldMeta')
+  , WorldMeta = require('./includes/WorldMeta.js')
   , Chunk = require('./includes/Chunk.js')
-  , { getStructureMeta } = require('./includes/ChunkKey');
+  , { getStructureMeta, buildChunkMeta, getChunkMeta } = require('./includes/ChunkKey.js')
+  , { ChunkPos } = require('./includes/Structs.js');
+
+const defaultOpt = {
+  /** Create db if missing. */
+  createIfMissing: false,
+  /** 
+   * Create a new chunk when target chunk is not loaded in db. 
+   * 
+   * Only affects loadChunk()
+   */
+  forceLoadChunk: false,
+  /** 
+   * What to do when encountered unloaded chunk in batch
+   * operations.
+   * 
+   * 0: Abort operation.
+   * 
+   * 1: Ignore unloaded chunk.
+   * 
+   * 2: Create an empty chunk.
+   */
+  unloadedChunkHandler: 0,
+  /** Limit volume of the fill region. */
+  maxFillBlockLimit: 65536,
+  /** Max chunk cache size. */
+  maxChunkCacheSize: 2048
+};
 
 function toChunkHash(dimension, pos) {
   return dimension + "$" + pos.x + "//" + pos.z
@@ -21,12 +48,7 @@ class Narrator {
     this.isOpen = false;
     this.worldMeta = null;
     this.path = path;
-    this.options = options || {
-      createIfMissing: false,
-      forceLoadChunk: false,
-      maxFillBlockLimit: 65536,
-      maxChunkCacheSize: 2048
-    };
+    this.options = Object.assign({}, defaultOpt, options);
     this.chunkCache = QuickLRU.createLRU({
       max: this.options.maxChunkCacheSize,
       onEviction: (function (a, b) {
@@ -67,9 +89,8 @@ class Narrator {
     fs.writeFileSync(pl.join(this.path, "level.dat"), this.worldMeta.serialize());
     fs.writeFileSync(pl.join(this.path, "levelname.txt"), this.levelName);
 
-    for (var chunk of this.chunkCache.values()) {
+    for (var chunk of this.chunkCache.values())
       await this.writeChunk(chunk)
-    }
 
     await this.db.close();
 
@@ -83,17 +104,93 @@ class Narrator {
   }
 
   /**
-   * Try to load a chunk from db
-   * @param {*} dimension 
-   * @param {*} pos 
+   * Check if the chunk exists in db.
+   * @param {ChunkPos} pos 
+   * @param {Number} dimension 
    * @returns 
    */
-  async loadChunk(dimension, pos) {
-    var k = toChunkHash(dimension, pos), c;
+  async chunkExists(pos, dimension) {
+    var iter = this.db.getIterator(), testMeta, testData;
+    iter.seek(buildChunkMeta({
+      pos: pos,
+      type: 0,
+      dimension: dimension
+    }));
+    testMeta = getChunkMeta((await iter.next())[1]);
+    if (!testMeta || testMeta.pos.x != pos.x || testMeta.pos.z != pos.z)
+      return false;
+  }
+
+  /**
+   * Try to load a chunk from db.
+   * @param {ChunkPos} pos 
+   * @param {Number} dimension 
+   * @returns 
+   */
+  async loadChunk(pos, dimension) {
+    var k = toChunkHash(dimension, pos);
+    // Try to get chunk from cache
     if (this.chunkCache.has(k))
       return this.chunkCache.get(k);
 
-    c = await Chunk.deserialize(this.db, pos, dimension);
+    return this.reloadChunk(dimension, pos)
+  }
+
+  /**
+   * Write a chunk to db.
+   * @param {Chunk} chunk 
+   * @returns 
+   */
+  async writeChunk(chunk) {
+    if (!chunk || !chunk.serialize)
+      return false;
+    return await chunk.serialize(this.db)
+  }
+
+  /**
+   * Delete a chunk of db and memory.
+   * 
+   * This operation will remove all the data of target chunk
+   * and can't be restored.
+   * 
+   * Deleted chunk should not be used again.
+   * @param {ChunkPos} pos 
+   * @param {Number} dimension 
+   * @returns 
+   */
+  async deleteChunk(pos, dimension) {
+    var k = toChunkHash(dimension, pos);
+    if (this.chunkCache.has(k))
+      this.chunkCache.delete(k);
+
+    var iter = this.db.getIterator(), testMeta, testData;
+    iter.seek(buildChunkMeta({
+      pos: pos,
+      type: 0,
+      dimension: dimension
+    }));
+    testData = await iter.next();
+    testMeta = getChunkMeta(testData[1]);
+    if (!testMeta || testMeta.pos.x != pos.x || testMeta.pos.z != pos.z)
+      return false;
+
+    // Delete all the keys of target chunk
+    for (; testMeta && testMeta.pos.x == pos.x || testMeta.pos.z == pos.z
+      ; testData = await iter.next(), testMeta = getChunkMeta(testData[1]))
+      this.db.delete(testData[1]);
+
+    return true
+  }
+
+  /**
+   * Reload chunk from db.
+   * @param {ChunkPos} pos 
+   * @param {Number} dimension 
+   * @returns 
+   */
+  async reloadChunk(dimension, pos) {
+    // Load chunk from db
+    var c = await Chunk.deserialize(this.db, pos, dimension);
     if (!c && !this.options.forceLoadChunk)
       return null
     else if (!c && this.options.forceLoadChunk)
@@ -104,32 +201,10 @@ class Narrator {
   }
 
   /**
-   * Write a chunk to db.
-   * @param {Chunk} chunk 
-   * @returns 
+   * Execute a in-game command.
+   * @param {String} command 
    */
-  async writeChunk(chunk) {
-    return await chunk.serialize(this.db)
-  }
-
-  /**
-   * Delete a chunk of db and memory.
-   * 
-   * This operation will remove all the data of target chunk
-   * and can't be restored.
-   * @param {*} dimension 
-   * @param {*} pos 
-   * @returns 
-   */
-  async deleteChunk(dimension, pos) {
-    var k = toChunkHash(dimension, pos);
-    if (this.chunkCache.has(k))
-      this.chunkCache.delete(k);
-  }
-
-  async execute(command) {
-
-  }
+  async execute(command) { }
 
   async setContext() {
 
@@ -142,6 +217,10 @@ class Narrator {
    * @param {*} block 
    */
   async setBlock(dimension, pos, block) {
+
+  }
+
+  async fill(dimension, pos1, pos2, block) {
 
   }
 }

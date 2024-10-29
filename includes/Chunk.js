@@ -1,20 +1,20 @@
 const { LevelDB } = require("leveldb-zlib")
   , { getChunkMeta, buildChunkMeta } = require("./ChunkKey.js")
   , SubChunkStoragePaletted = require("./SubChunkStoragePaletted.js")
-  , Dimension = require("./Dimension.js");
-const BlockLegacy = require("./Block.js");
-const { SubChunkBlockPos } = require("./Structs.js");
+  , Dimension = require("./Dimension.js")
+  , BlockLegacy = require("./Block.js")
+  , { SubChunkBlockPos, ChunkPos } = require("./Structs.js");
 
 class Chunk {
   /**
    * Read all data of a chunk from db.
    * @param {*} db 
-   * @param {*} pos 
+   * @param {ChunkPos} pos 
    * @param {*} dimension 
    * @returns 
    */
   static async deserialize(db, pos, dimension) {
-    var d, result = new Chunk(), flag;
+    var d, result = new Chunk();
 
     if (typeof dimension != 'number' || dimension < 0)
       throw new Error("Param dimension must be a number >= 0");
@@ -29,21 +29,21 @@ class Chunk {
     result.pos.x = pos.x;
     result.pos.z = pos.z;
 
-    // Check for whether chunk is loaded
+    // Check if the chunk exists in db
     var iter = db.getIterator(), testMeta;
-    await iter.seek(buildChunkMeta({
-      pos: [pos.x, pos.z],
+    iter.seek(buildChunkMeta({
+      pos: pos,
       type: 0,
       dimension: dimension
     }));
     testMeta = getChunkMeta((await iter.next())[1]);
-    if (!testMeta || testMeta.pos[0] != pos.x || testMeta.pos[1] != pos.z)
+    if (!testMeta || testMeta.pos.x != pos.x || testMeta.pos.z != pos.z)
       return null;
 
     // Deserialize subchunks
     for (var i = result.minHeight >> 4, max = result.height + result.minHeight; i < max >> 4; i++) {
       var m = buildChunkMeta({
-        pos: [pos.x, pos.z],
+        pos: pos,
         type: 0x2f,
         index: i,
         dimension: dimension
@@ -60,7 +60,7 @@ class Chunk {
 
   /**
    * Create an empty chunk.
-   * @param {*} pos 
+   * @param {ChunkPos} pos 
    * @param {*} dimension 
    * @returns 
    */
@@ -88,10 +88,7 @@ class Chunk {
   }
 
   constructor() {
-    this.pos = {
-      x: 0,
-      z: 0
-    };
+    this.pos = new ChunkPos(0, 0);
     this.subChunk = [];
     this.blockEntity = [];
     this.entity = [];
@@ -114,11 +111,13 @@ class Chunk {
         dimension: this.dimensionId
       }), this.subChunk[i].serialize())
     }
+
+    return true
   }
 
   /**
    * Set a block in chunk
-   * @param {*} pos 
+   * @param {ChunkPos} pos 
    * @param {*} block 
    */
   setBlock(pos, block) {
