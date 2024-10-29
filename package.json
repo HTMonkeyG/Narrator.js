@@ -1,5 +1,5 @@
 {
-  "name": "narrator",
+  "name": "upper-narrator",
   "version": "0.0.1",
   "description": "Read and write MCBE archive data with NodeJS",
   "main": "main.js",
